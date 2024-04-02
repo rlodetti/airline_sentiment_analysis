@@ -1,3 +1,23 @@
+import pandas as pd
+import numpy as np
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.pipeline import Pipeline
+from scikeras.wrappers import KerasClassifier
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras import layers
+from nltk.tokenize import RegexpTokenizer
+from nltk.stem import WordNetLemmatizer
+from nltk import pos_tag
+from nltk.corpus import wordnet
+
+# Optional: You might need to download NLTK data (e.g., for POS tagging and WordNet)
+import nltk
+nltk.download('averaged_perceptron_tagger', quiet=True)
+nltk.download('wordnet', quiet=True)
+
+
 class TextCleanerTransformer(BaseEstimator, TransformerMixin):
     def __init__(self, stop_words=None, lemmatize=True):
         self.stop_words = set(stop_words) if stop_words else None
@@ -86,4 +106,49 @@ def summarize_rnn_grid_search_results(grid_search):
     
     return sorted_df
 
+def load_data(path, val=False, sample=0):
+    if sample == 0:
+        df = pd.read_csv(path)[['Review_Title','Review','Recommended']]
+    else:
+        df = pd.read_csv(path)[['Review_Title','Review','Recommended']].sample(sample)
+    
+    X = df['Review_Title'] + ' ' + df['Review']
+    y = df['Recommended'].map({'yes':1,'no':0})
+    if val:
+        X_train, X_temp, y_train, y_temp = train_test_split(
+            X, y, test_size=0.2, stratify=y, random_state=42)
+        X_val, X_test, y_val, y_test = train_test_split(
+            X_temp, y_temp, test_size=0.5, stratify=y_temp, random_state=42)
+        return X_train, X_val, X_test, y_train, y_val, y_test
+    else:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, stratify=y, random_state=42)
+        return X_train, X_test, y_train, y_test
 
+def create_tf_datasets(X, y, is_training=False):
+    """
+    Converts selected features and labels into TensorFlow datasets.
+    """
+    if is_training:
+        train_ds = tf.data.Dataset.from_tensor_slices((np.array(X), y.astype('float32')))
+        train_ds = train_ds.shuffle(1000, reshuffle_each_iteration=True).batch(64).cache().prefetch(tf.data.AUTOTUNE)
+        return train_ds
+    else:
+        test_ds = tf.data.Dataset.from_tensor_slices((np.array(X), y.astype('float32')))
+        test_ds = test_ds.batch(64).cache().prefetch(tf.data.AUTOTUNE)
+        return test_ds
+
+class KerasTextVectorizer(BaseEstimator, TransformerMixin):
+    def __init__(self, max_tokens, output_sequence_length):
+        self.max_tokens = max_tokens
+        self.output_sequence_length = output_sequence_length
+        self.text_vectorization = tf.keras.layers.TextVectorization(
+            max_tokens=self.max_tokens,
+            output_sequence_length=self.output_sequence_length)
+
+    def fit(self, X, y=None):
+        self.text_vectorization.adapt(X)
+        return self  # Return self to allow chaining
+
+    def transform(self, X, y=None):
+        return self.text_vectorization(X).numpy()  # Convert to numpy for sklearn compatibility
