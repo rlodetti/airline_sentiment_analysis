@@ -1,184 +1,177 @@
-import pandas as pd
 import numpy as np
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.pipeline import Pipeline
-from scikeras.wrappers import KerasClassifier
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras import layers
-from nltk.tokenize import RegexpTokenizer
+import pandas as pd
+from joblib import dump
+from nltk.corpus import stopwords, wordnet
 from nltk.stem import WordNetLemmatizer
-from nltk import pos_tag
-from nltk.corpus import wordnet
-
-# Optional: You might need to download NLTK data (e.g., for POS tagging and WordNet)
+from nltk.tag import pos_tag
+from nltk.tokenize import RegexpTokenizer
 import nltk
-nltk.download('averaged_perceptron_tagger', quiet=True)
+from sklearn.model_selection import StratifiedKFold, cross_validate
+from sklearn.pipeline import Pipeline
+from tensorflow.data import AUTOTUNE as tf_AUTOTUNE, Dataset as tf_Dataset
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.layers import Bidirectional, Dense, Dropout, Embedding, GRU
+from tensorflow.keras.models import Sequential
+nltk.download('stopwords', quiet=True)
 nltk.download('wordnet', quiet=True)
+nltk.download('averaged_perceptron_tagger', quiet=True)
 
-def get_wordnet_pos(treebank_tag):
+def get_wordnet_pos_optimized(treebank_tag):
     """Map POS tag to first character lemmatize() accepts."""
-    if treebank_tag.startswith('J'):
-        return wordnet.ADJ
-    elif treebank_tag.startswith('V'):
-        return wordnet.VERB
-    elif treebank_tag.startswith('N'):
-        return wordnet.NOUN
-    elif treebank_tag.startswith('R'):
-        return wordnet.ADV
-    else:
-        return wordnet.NOUN
+    tag_dict = {
+        'J': wordnet.ADJ,
+        'V': wordnet.VERB,
+        'N': wordnet.NOUN,
+        'R': wordnet.ADV
+    }
+    # Default to NOUN if not found
+    return tag_dict.get(treebank_tag[0], wordnet.NOUN)
 
-def clean_text(review, stop_words=None, lemmatize=True):
+def clean_text(review, tokenizer, stop_words=None, lemmatize=False, tokenize=False):
     """Clean and preprocess a single review text."""
-    tokenizer = RegexpTokenizer(r"([a-zA-Z]+(?:’[a-z]+)?)")
-    lemmatizer = WordNetLemmatizer() if lemmatize else None
-    
     tokens = tokenizer.tokenize(review.lower())
+    
     if lemmatize:
+        lemmatizer = WordNetLemmatizer()
         pos_tags = pos_tag(tokens)
-        tokens = [lemmatizer.lemmatize(word, get_wordnet_pos(tag)) for word, tag in pos_tags]
+        tokens = [lemmatizer.lemmatize(word, get_wordnet_pos_optimized(tag)) for word, tag in pos_tags]
+    
     if stop_words:
-        tokens = [word for word in tokens if word not in stop_words]
+        stop_words_set = set(stop_words)
+        tokens = [word for word in tokens if word not in stop_words_set]
     
-    return ' '.join(tokens)
-
-def preprocess_texts(reviews, stop_words=None, lemmatize=False):
-    """Apply text cleaning and preprocessing to a list of texts."""
-    return [clean_text(review, stop_words=stop_words, lemmatize=lemmatize) for review in reviews]
-
-class TextCleanerTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self, stop_words=None, lemmatize=True):
-        self.stop_words = set(stop_words) if stop_words else None
-        self.lemmatize = lemmatize
-        self.lemmatizer = WordNetLemmatizer() if lemmatize else None
-        self.tokenizer = RegexpTokenizer(r"([a-zA-Z]+(?:’[a-z]+)?)")
-        
-    def fit(self, X, y=None):
-        return self  # No fitting necessary for this transformer
-    
-    def transform(self, X, y=None):
-        return [self.clean_text(review) for review in X]
-    
-    def clean_text(self, review):
-        tokens = self.tokenizer.tokenize(review.lower())  # Tokenize and lowercase
-        if self.lemmatize:
-            pos_tags = pos_tag(tokens)
-            tokens = [self.lemmatizer.lemmatize(word, self.get_wordnet_pos(tag))
-                      for word, tag in pos_tags]
-        if self.stop_words:
-            tokens = [word for word in tokens if word not in self.stop_words]
-        
+    if tokenize:
+        return tokens
+    else:
         return ' '.join(tokens)
-    
-    def get_wordnet_pos(self, treebank_tag):
-        if treebank_tag.startswith('J'):
-            return wordnet.ADJ
-        elif treebank_tag.startswith('V'):
-            return wordnet.VERB
-        elif treebank_tag.startswith('N'):
-            return wordnet.NOUN
-        elif treebank_tag.startswith('R'):
-            return wordnet.ADV
-        else:
-            return wordnet.NOUN
 
-def summarize_mlp_grid_search_results(grid_search):
-    columns_to_extract = [
-        ('mean_fit_time', 'fit_time'),
-        ('mean_score_time', 'score_time'),
-        ('param_mlp__model__num_layers', 'num_layers'),
-        ('param_mlp__model__units', 'units'),
-        ('mean_test_score', 'balanced_accuracy'),
-        ('param_mlp__model__initializer','initializer'),
-        ('param_mlp__model__dropout_rate', 'dropout_rate')
-        
-    ]
-    summary_df = pd.DataFrame(grid_search.cv_results_)[[original for original, renamed in columns_to_extract]]
+def preprocess_texts(reviews, tokenizer, stop_words=None, lemmatize=False, tokenize=False):
+    """Apply optimized text cleaning and preprocessing to a list of texts."""
+    return [clean_text(review, tokenizer, stop_words=stop_words, lemmatize=lemmatize, tokenize=tokenize) for review in reviews]
 
-    summary_df.columns = [renamed for original, renamed in columns_to_extract]
-    
-    # Calculate total time and convert to int
-    summary_df['time'] = (summary_df['fit_time'] + summary_df['score_time']).astype(int)
-    
-    # Reorder and select final columns for the output
-    final_columns = ['balanced_accuracy', 'time', 'num_layers', 'units', 'dropout_rate', 'initializer']
-    final_df = summary_df[final_columns]
-    sorted_df = final_df.sort_values(by=['balanced_accuracy', 'time'], ascending=[False, True])
-    
-    return sorted_df
-
-def summarize_rnn_grid_search_results(grid_search):
-    columns_to_extract = [
-        ('mean_fit_time', 'fit_time'),
-        ('mean_score_time', 'score_time'),
-        ('param_rnn__model__bi_directional', 'bi_directional'),
-        ('param_rnn__model__dense_layers', 'num_dense_layers'),
-        ('param_rnn__model__recurrent_type', 'recurrent_type'),
-        ('param_rnn__model__rnn_layers', 'num_rnn_layers'),
-        ('param_rnn__model__units', 'units'),
-        ('param_rnn__model__dropout_rate', 'dropout_rate'),
-        ('mean_train_score', 'train_score'),
-        ('mean_test_score', 'test_score')
-    ]
-    summary_df = pd.DataFrame(grid_search.cv_results_)[[original for original, renamed in columns_to_extract]]
-
-    summary_df.columns = [renamed for original, renamed in columns_to_extract]
-    
-    # Calculate total time and convert to int
-    summary_df['time'] = (summary_df['fit_time'] + summary_df['score_time']).astype(int)
-    
-    # Reorder and select final columns for the output
-    final_columns = ['train_score', 'test_score', 'time', 'units', 'bi_directional', 'recurrent_type', 'num_rnn_layers', 'num_dense_layers', 'dropout_rate']
-    final_df = summary_df[final_columns]
-    sorted_df = final_df.sort_values(by=['test_score', 'time'], ascending=[False, True])
-    
-    return sorted_df
-
-def load_data(path, val=False, sample=0):
-    if sample == 0:
-        df = pd.read_csv(path)[['Review_Title','Review','Recommended']]
-    else:
-        df = pd.read_csv(path)[['Review_Title','Review','Recommended']].sample(sample)
-    
-    X = df['Review_Title'] + ' ' + df['Review']
-    y = df['Recommended'].map({'yes':1,'no':0})
-    if val:
-        X_train, X_temp, y_train, y_temp = train_test_split(
-            X, y, test_size=0.2, stratify=y, random_state=42)
-        X_val, X_test, y_val, y_test = train_test_split(
-            X_temp, y_temp, test_size=0.5, stratify=y_temp, random_state=42)
-        return X_train, X_val, X_test, y_train, y_val, y_test
-    else:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, stratify=y, random_state=42)
-        return X_train, X_test, y_train, y_test
-
-def create_tf_datasets(X, y, is_training=False):
+def prepare_tf_dataset(X, y, batch_size, is_training=False):
     """
-    Converts selected features and labels into TensorFlow datasets.
+    Prepares a TensorFlow dataset for efficient training or evaluation.
     """
+    dataset = tf_Dataset.from_tensor_slices((X, y))
     if is_training:
-        train_ds = tf.data.Dataset.from_tensor_slices((np.array(X), y.astype('float32')))
-        train_ds = train_ds.shuffle(1000, reshuffle_each_iteration=True).batch(64).cache().prefetch(tf.data.AUTOTUNE)
-        return train_ds
+        dataset = dataset.shuffle(10000)  # Shuffle only if dataset is for training
+    return dataset.batch(batch_size).cache().prefetch(tf_AUTOTUNE)
+
+def extract_performance_metrics(history, callbacks):
+    early_stopping = next(
+        (cb for cb in callbacks if isinstance(cb, EarlyStopping)), 
+        None
+    )
+    if early_stopping and early_stopping.stopped_epoch > 0:
+        adjusted_epoch = early_stopping.stopped_epoch - early_stopping.patience
+        max_epoch_index = len(history.history['loss']) - 1
+        best_epoch = max(0, min(adjusted_epoch, max_epoch_index))
     else:
-        test_ds = tf.data.Dataset.from_tensor_slices((np.array(X), y.astype('float32')))
-        test_ds = test_ds.batch(64).cache().prefetch(tf.data.AUTOTUNE)
-        return test_ds
+        best_epoch = len(history.history['loss']) - 1
 
-class KerasTextVectorizer(BaseEstimator, TransformerMixin):
-    def __init__(self, max_tokens, output_sequence_length):
-        self.max_tokens = max_tokens
-        self.output_sequence_length = output_sequence_length
-        self.text_vectorization = tf.keras.layers.TextVectorization(
-            max_tokens=self.max_tokens,
-            output_sequence_length=self.output_sequence_length)
+    metrics = {
+        'loss': history.history['loss'][best_epoch],
+        'val_loss': history.history['val_loss'][best_epoch],
+        'val_accuracy': history.history.get('val_accuracy', [None])[best_epoch],
+        'val_auc': history.history.get('val_auc', [None])[best_epoch]
+    }
+    return metrics
 
-    def fit(self, X, y=None):
-        self.text_vectorization.adapt(X)
-        return self  # Return self to allow chaining
+def bag_of_words_CV(model_name, model, pipe, X_train, y_train, cv):
+    model_pipeline = Pipeline(
+        steps=pipe.steps + [
+            (model_name, model)
+        ]
+    )
+    cv_results = cross_validate(model_pipeline, 
+                            X_train, 
+                            y_train, 
+                            cv=cv, 
+                            scoring=['accuracy', 'roc_auc'], 
+                            return_train_score=False)
+    
+    model_pipeline.fit(X_train, y_train)
+    
+    dump(model_pipeline, model_name + '_pipeline.joblib')
+    
+    accuracy = cv_results['test_accuracy'].mean()
+    auc = cv_results['test_roc_auc'].mean()
+    df = pd.DataFrame([[accuracy,auc]],columns=['Accuracy','AUC'], index=[model_name])
+    return df
 
-    def transform(self, X, y=None):
-        return self.text_vectorization(X).numpy()  # Convert to numpy for sklearn compatibility
+def keras_cv(model_name,X,y,cv,tokenizer,text_vectorization,CALLBACKS, glove=False, glove_path = None):
+    metrics_aggregate = {'loss': 0, 'val_loss': 0, 'val_accuracy': 0, 'val_auc': 0}
+    X = np.array(X)
+    y = np.array(y)
+    runs = 0
+    for train, validation in cv.split(X, y):
+        runs += 1
+        X_train = X[train]
+        y_train = y[train]
+        X_val = X[validation]
+        y_val = y[validation]
+    
+        X_train_clean = preprocess_texts(X_train, tokenizer)
+        X_val_clean = preprocess_texts(X_val, tokenizer)
+    
+        text_vectorization.adapt(X_train)
+        X_train = text_vectorization(X_train)
+        X_val = text_vectorization(X_val)
+    
+        train_ds = prepare_tf_dataset(X_train, y_train, 256, is_training=True)
+        val_ds = prepare_tf_dataset(X_val, y_val, 256)
+
+        if glove:
+            vocabulary = text_vectorization.get_vocabulary()
+            vocab_size = len(vocabulary)
+            
+            # Load GloVe embeddings from file.
+            glove_embeddings = {}
+            with open(glove_path, 'r', encoding='utf-8') as file:
+                for line in file:
+                    values = line.split()
+                    word = values[0]
+                    vector = np.asarray(values[1:], dtype='float32')
+                    glove_embeddings[word] = vector
+
+            # Initialize the embedding matrix with zeros.
+            embedding_matrix = np.zeros((vocab_size, 300))
+            
+            # Populate the embedding matrix with GloVe vectors.
+            for i, word in enumerate(vocabulary):
+                embedding_vector = glove_embeddings.get(word)
+                if embedding_vector is not None:
+                    embedding_matrix[i] = embedding_vector
+                    
+            model = Sequential([Embedding(input_dim=20000, output_dim=300, input_length=200, weights=[embedding_matrix], trainable=False),
+                                Bidirectional(GRU(32)),
+                                Dropout(0.4),
+                                Dense(16, activation='relu'),
+                                Dropout(0.4),
+                                Dense(1, activation='sigmoid')
+                                ])
+        
+        model = Sequential([Embedding(input_dim=20000, output_dim=32, input_length=200),
+                            Bidirectional(GRU(16)),
+                            Dense(8, activation='relu'),
+                            Dense(1, activation='sigmoid')
+    ])
+        model.compile(optimizer='adam',
+                      loss='binary_crossentropy',
+                      metrics=['accuracy', 'AUC'])
+        
+        results = model.fit(train_ds,
+                            validation_data= val_ds,
+                            epochs=100,
+                            verbose=0,
+                            callbacks=CALLBACKS)
+        
+        metrics = extract_performance_metrics(results, CALLBACKS)
+        for key in metrics_aggregate:
+                metrics_aggregate[key] += metrics[key]
+    results_dic = {key: val / runs for key, val in metrics_aggregate.items()}
+    accuracy = results_dic['val_accuracy']
+    auc = results_dic['val_auc']
+    df = pd.DataFrame([[accuracy,auc]],columns=['Accuracy','AUC'], index=[model_name])
+    return pd.DataFrame([results_dic])
