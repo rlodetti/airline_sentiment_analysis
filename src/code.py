@@ -12,9 +12,55 @@ from tensorflow.data import AUTOTUNE as tf_AUTOTUNE, Dataset as tf_Dataset
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import Bidirectional, Dense, Dropout, Embedding, GRU
 from tensorflow.keras.models import Sequential
+from sklearn.metrics import accuracy_score, roc_auc_score
+import matplotlib.pyplot as plt
 nltk.download('stopwords', quiet=True)
 nltk.download('wordnet', quiet=True)
 nltk.download('averaged_perceptron_tagger', quiet=True)
+from lime.lime_text import LimeTextExplainer
+import seaborn as sns
+
+def most_common_words(top_yes_words, top_no_words):
+    yes_words = []
+    yes_counts = []
+    for word, count in top_yes_words:
+        yes_words.append(word)
+        yes_counts.append(count)
+
+    no_words = []
+    no_counts = []
+    for word, count in top_no_words:
+        no_words.append(word)
+        no_counts.append(count)
+
+    # Determine common and unique words
+    common_words = set(yes_words) & set(no_words)
+    all_words = set(yes_words) | set(no_words)
+    unique_words = all_words - common_words
+    
+    # Generate a color palette
+    standout_color = "#1f77b4"
+    neutral_color = "#ff7f0e"
+    
+    # Map each word to its color
+    color_map = {word: standout_color for word in common_words}
+    color_map.update({word: neutral_color for word in unique_words})
+
+    # Create the color lists for plotting
+    yes_colors = [color_map[word] for word in yes_words]
+    no_colors = [color_map[word] for word in no_words]
+
+    fig, ax = plt.subplots(1,2, figsize=(8,4))
+    sns.barplot(x=yes_words, y=yes_counts, ax= ax[0], palette=yes_colors)
+    sns.barplot(x=no_words, y=no_counts, ax= ax[1], palette=no_colors)
+    ax[0].set_title("Yes Reviews")
+    ax[1].set_title("No Reviews")
+    ax[0].tick_params(axis='x', rotation=45)
+    ax[1].tick_params(axis='x', rotation=45)
+    plt.subplots_adjust(bottom=0.2)
+    fig.text(0.5, -.05, 'Top 10 Most Frequent Words', ha='center', va='bottom', fontsize=12)
+    plt.tight_layout()
+    plt.show()
 
 def get_wordnet_pos_optimized(treebank_tag):
     """Map POS tag to first character lemmatize() accepts."""
@@ -175,3 +221,11 @@ def keras_cv(model_name,X,y,cv,tokenizer,text_vectorization,CALLBACKS, glove=Fal
     auc = results_dic['val_auc']
     df = pd.DataFrame([[accuracy,auc]],columns=['Accuracy','AUC'], index=[model_name])
     return pd.DataFrame([results_dic])
+
+def evaluate_model(model, X_test, y_test):
+    """
+    Evaluates a given model on a test dataset and returns scores for loss, recall, and AUC.
+    """
+    accuracy = accuracy_score(y_test, model.predict(X_test))
+    auc = roc_auc_score(y_test,model.predict_proba(X_test)[:,1])
+    return accuracy, auc
