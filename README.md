@@ -27,7 +27,8 @@ The original dataset was collected from from [airlineequallity.com](https://www.
 Juhi Bhojani. You can find more details about their collection process at their [GitHub](https://github.com/Juhibhojani/Airline-Reviews-). I found and downloaded the data directly from [Kaggle](https://www.kaggle.com/datasets/juhibhojani/airline-reviews) in the form of a csv. 
 
 While originally including 20 columns, I decided to select just 3 of them to focus this project on Natual Language Processing. The `Review_Title` and `Review` columns will be combined to serve as the review texts and the target will be the `Recommended` column which consists of either "yes" or "no".
-<img src="images/distribution.jpg" width="300">
+
+<img src="images/distribution.jpg" width="500">
 
 ![common_words](./images/common_words_bar.jpg)
 ## Data Preparation
