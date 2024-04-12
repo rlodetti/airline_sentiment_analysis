@@ -27,7 +27,9 @@ The original dataset was collected from from [airlineequallity.com](https://www.
 Juhi Bhojani. You can find more details about their collection process at their [GitHub](https://github.com/Juhibhojani/Airline-Reviews-). I found and downloaded the data directly from [Kaggle](https://www.kaggle.com/datasets/juhibhojani/airline-reviews) in the form of a csv. 
 
 While originally including 20 columns, I decided to select just 3 of them to focus this project on Natual Language Processing. The `Review_Title` and `Review` columns will be combined to serve as the review texts and the target will be the `Recommended` column which consists of either "yes" or "no". 
+![target_distribution](./images/distribution.jpg)
 
+![common_words](./images/common_words_bar.jpg)
 ## Data Preparation
 ***
 
@@ -42,7 +44,6 @@ Bag-of-Words models:
 Sequantial models:
 - Converted reviews into sequence vectors
 - Created an embedding matrix using pre-trained GloVe embeddings.
-
 
 
 ## Data Modeling
@@ -73,10 +74,13 @@ Sequential Models
 Our final model was evaluated on a previously unseen test dataset to assess its performance in classifying reviews as either "Yes" or "No". The model demonstrated an accuracy of 92%, which represents a modest improvement over our baseline model's accuracy of 90.8%. This performance is substantially superior to that of the dummy model, which had an accuracy of only 50%.
 
 This increase in accuracy, while seemingly small, is critical in the context of our project's objectives. It underscores the effectiveness of the chosen model and techniques in capturing the nuances of the data that were not as effectively addressed by the baseline model. Additionally, the comparison with the dummy model, which makes predictions based on no information about the data, highlights the value added by our modeling approach.
-
+![final_model](./images/final_model.jpg)
 
 ### Model Interpretation
-Now I will use LIME to see which words were the most influential for recommendations
+Using LIME to see which words were the most influential for recommendations. Common themes include an importance on punctuality and customer service. 
+![1363](./images/1363.jpg)
+![1731](./images/1731.jpg)
+![1789](./images/1789.jpg)
 
 ## Conclusions
 ***
