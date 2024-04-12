@@ -1,7 +1,7 @@
 # Airline Review Sentiment Analysis
 ***
 **Author:** Ron Lodetti Jr.
-![airplane](images/aipromptsmaker_com_free_social_media_banners_by_webartgallery_dfyynow-pre.jpg)
+![airplane](images/airplane.jpg)
 
 ## Overview
 ***
@@ -26,8 +26,8 @@ By creating a predictive model to analyze customer sentiment at scale, our proje
 The original dataset was collected from from [airlineequallity.com](https://www.airlinequality.com/review-pages/a-z-airline-reviews/) by 
 Juhi Bhojani. You can find more details about their collection process at their [GitHub](https://github.com/Juhibhojani/Airline-Reviews-). I found and downloaded the data directly from [Kaggle](https://www.kaggle.com/datasets/juhibhojani/airline-reviews) in the form of a csv. 
 
-While originally including 20 columns, I decided to select just 3 of them to focus this project on Natual Language Processing. The `Review_Title` and `Review` columns will be combined to serve as the review texts and the target will be the `Recommended` column which consists of either "yes" or "no". 
-![target_distribution](./images/distribution.jpg)
+While originally including 20 columns, I decided to select just 3 of them to focus this project on Natual Language Processing. The `Review_Title` and `Review` columns will be combined to serve as the review texts and the target will be the `Recommended` column which consists of either "yes" or "no".
+<img src="images/distribution.jpg" width="300">
 
 ![common_words](./images/common_words_bar.jpg)
 ## Data Preparation
